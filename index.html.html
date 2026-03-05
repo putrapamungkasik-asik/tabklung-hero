@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>TABKLUNG V12.5 - SUSTAIN EDITION</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --glow: #fbbf24;
+            --bg: #0a0a0a;
+            --panel: #1a1a1a;
+            --blue: #3b82f6;
+            --red: #ff4757;
+            --green: #2ecc71;
+            --hitzone-y: 80px; 
+        }
+
+        body {
+            margin: 0; background: var(--bg); color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden; 
+            display: flex; flex-direction: column; height: 100vh;
+        }
+
+        #visualizer-canvas {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0; opacity: 0.1; pointer-events: none;
+        }
+
+        #highway-canvas {
+            flex: 1; background: #000; cursor: crosshair;
+            z-index: 5;
+        }
+
+        #chord-display {
+            height: 60px; background: linear-gradient(180deg, #222, #000);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px; font-weight: 900; color: var(--glow);
+            text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
+            border-bottom: 2px solid #333; letter-spacing: 2px;
+            position: relative; flex-shrink: 0; z-index: 10;
+        }
+
+        .user-logo {
+            position: absolute; right: 60px; top: 50%;
+            transform: translateY(-50%); height: 45px; width: auto;
+        }
+
+        #metronome-dot {
+            position: absolute; right: 20px; width: 12px; height: 12px;
+            border-radius: 50%; background: #333;
+        }
+        .dot-active { background: var(--red) !important; box-shadow: 0 0 10px var(--red); }
+
+        .toolbar {
+            padding: 8px 15px; background: #111; display: flex; gap: 8px; 
+            align-items: center; border-bottom: 1px solid #333; flex-shrink: 0;
+            z-index: 10;
+        }
+
+        .transpose-ctrl {
+            display: flex; align-items: center; gap: 5px; 
+            background: #222; padding: 2px 8px; border-radius: 4px;
+            border: 1px solid #444;
+        }
+        .transpose-val { font-family: monospace; font-weight: bold; color: var(--glow); min-width: 25px; text-align: center; }
+        
+        .seek-container { width: 100%; display: flex; align-items: center; gap: 10px; background: #111; padding: 10px 15px; box-sizing: border-box; z-index: 10; }
+        #seek-slider { flex: 1; cursor: pointer; accent-color: var(--glow); }
+
+        button { cursor: pointer; padding: 8px 15px; font-weight: bold; background: #222; color: white; border: 1px solid #444; border-radius: 4px; }
+        .active-btn { background: var(--glow) !important; color: black; }
+        .rec-running { background: var(--red) !important; animation: pulse-rec 1s infinite; }
+        
+        #bar-info { font-family: monospace; color: var(--glow); font-size: 14px; margin-left: auto; }
+        #watermark { position: fixed; bottom: 20px; right: 20px; color: rgba(255,255,255,0.2); font-weight: bold; display: none; z-index: 100; }
+        .recording-active #watermark { display: block; }
+        .recording-active .toolbar, .recording-active .seek-container { display: none !important; }
+
+        @keyframes pulse-rec { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body id="main-body">
+
+<canvas id="visualizer-canvas"></canvas>
+<div id="watermark">TABKLUNG SUSTAIN V12.5</div>
+
+<div id="chord-display">
+    <span id="song-title-text">SIAP IMPORT JSON</span>
+    <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjvm4FDE7tagy8ZtWyfy_pzRnB9D8orAO_5EwH5sBbJOC3JIOlGweg5XCwhWQZbY8xVIFTbMpojvtX3X-BZv_xfrvjzIkXn3-RYIwFJMhOnM-y0YaO8JZocqYoFmq4NSdHwsPzAp8kIjzfFtCL8KrgDiueLZRhApll7tvcTmeRS6lcBtjEK4ZthgkS7rmI/s320/kang_putra__1_-removebg-preview.png" class="user-logo">
+    <div id="metronome-dot"></div>
+</div>
+
+<div class="toolbar">
+    <input type="file" id="audioLoader" accept="audio/*" style="display:none">
+    <button id="loadAudioBtn" style="background: var(--green); color: black;">📂 LOAD MP3</button>
+    <span id="audio-status-label" style="font-size: 11px; color:#888">MP3 Belum dimuat</span>
+    <div style="border-left: 1px solid #444; height: 20px; margin: 0 5px;"></div>
+    
+    <input type="file" id="fileInput" accept=".json">
+    
+    <div class="transpose-ctrl">
+        <span style="font-size: 10px; color: #888">TRANSPOSE</span>
+        <button id="transDown">-</button>
+        <span id="transVal" class="transpose-val">0</span>
+        <button id="transUp">+</button>
+    </div>
+
+    <button id="playBtn">▶ PLAY</button>
+    <button id="stopBtn">■ STOP</button>
+    <button id="metroBtn" class="active-btn">🔔 METRO</button>
+    <button id="loopBtn">🔁 LOOP</button>
+    <button id="recBtn">🎥 REC SCREEN</button>
+    <div id="bar-info">BAR: 0/0 | TICK: 0</div>
+</div>
+
+<div class="seek-container">
+    <input type="range" id="seek-slider" value="0" min="0" step="1">
+</div>
+
+<canvas id="highway-canvas"></canvas>
+
+<script>
+const IMAGE_MAP = { "0": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjy8Vy-6sxB0zmTlGAvwZaHKh6aFLYZe3Y5FijgxD1CYmJRD_4r3etoPduc-GOfBgKprG31etbkAppYNEYrvvWZ1_TDjjk0Sb2ROKchiBQNQ_PPG93JKy1eAYLX1z-ys5hzs6OUymfQH1OW8A68tUy0FDReiVfVFcDHsREXjT1g3d0lORKaoLaxDEH0Yxc/w178-h200/Picture1.png", "1": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhsT4ND4CARYe2LiFSR2peLeHuybPW3gWp9lrEi6h0VsKPj63ThOm_7Tl1xHF29mEL5vvl5ss1uyNgKoVq75zQAtBzbTh8mTK5HsFqkYzL7HcVNgOXR0GX_06n8LwtFolpNDO4SNhWvDHOcvVSBe6k81BwMdjP6fRebLzbm3ZOo_-XQFQYJqUO1wDK-YgI/w178-h200/Picture2.png", "2": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjUsm-V5Ju8eeWLbYgsBTlH8Yj1Jzf_iNXDSCVW-EkNRIP6600Bk-lMrsRKLbO2Z8vlW9xMtfaMi08hHdY9dRap3_3tBKzF-NbZEW6rY0rDUYbiOkhSRIMvdjk2i1E_mAxY5YYFHiSpcA2tNMPekc8_yjaoVuiExmyKALXLBa2f7KC4TiPeWBA_XmsXk0A/w178-h200/Picture3.png", "3": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgrz965u8QAjC9koRxtIgt7V2P_uhPLWVE7iq8DX28LOhy83NWPn6OuNKtEkpTX-25EyKia0w_8ItaI7zbBXi9AdJ3EUzuLJwgTHGHX941jcGtJS1U6BHId1Rl_TRvQNqbecUyIo4C2an3Li0vzhOFbv_IKGPVUgrxxBKEsj3YqUFMz6vSp50mgZDLfeEA/w178-h200/Picture4.png", "4": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiUUubyTdfDeAZCKGxkoETmCRORzLxyVt7o9D-EIjscqxo13abJk2h_A5jGNvsSTroLJX8_4fNd_GvbUk7yz3J5CditdFmvMTSAdKgHkrm7r_gMWIIQcsaV4Fr4Q2xIMJzUyzkFYAmRvjZzqW0TQOWHO5mmyD60_HdTq-FY8_O_LOCY4X0YHdl0q51dZq0/w178-h200/Picture5.png", "5": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgPT9aY-SlUr7miyV460JyvzZ8RXNOEE65DANGZvDO_mt2tvy4WwAsUCD9OI6UJ7NOkMfDqYflpSF-Q3MduOCSwAAJVlvEX_6JcswqMuDy1dgZgszoG1RSRFodZyY6wL85DmauanCRIvE4oBtpG3A_dJdFznEkaG_NiuXnjaz1B4UukgtlwRxNFjuLRou0/w178-h200/Picture6.png", "6": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjRnt627iH7Lw-5YZ7BV2w2HZ8BAoqE8h8Vc2idPoi_HJddkdUC7Xzz926r748DBrFTkPH1foWu0XtI_Sr5XbLvq0-_-4Wl3qNjtBRUS84esnI6kEmCXqG1IVwZzhLMGFUsu8wKvzELlS9PThicyfkPiewexy2A31vBDgV_WQyZpzEilyk5t2-Y-SYh8zU/w177-h200/Picture7.png", "7": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjU2wFrTv48bj5ousZiD4c9gtdx5PmRXjo1u8VdYoMG4jAFP4BL4MDpEE7rVL256oJ4cRDjKh0oevzTg1VHl4CBZAwMK3vvgBFezmfItFzSBnDN2guy3YpcgLJPlVMIaq4yk-gcv2MDQP7WTaIRBagqf5ZFZUpiriC-CF-mOfDKTd0faAOZyunVFboH230/w178-h200/Picture8.png", "8": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgH1lgMoOOLMn6h2IhvMjICB4xGDPyo2SQdTRSPNAwgoJSDUO9owXWCW0o3lWGaycLUMCoLLl1l86Fdv1XlNVhIMxxcc-CLoUduF0-2oZrqulBZIAAeZ2m4Nm_6BchbaLJ68CnIf0tl0Ni9UYukp915zW_eRmZa2zj99l8mdf2f6zOzl6fvNpWLQ0zauUE/w178-h200/Picture9.png", "9": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEg1pSLkWh4Y-dsFk1UQZeWuZ7lThQ13LYpbw76Wa6g05Kry8PkNyKvgQRu2JGbmj7hWZCmiSsHr0vDSXLf3qXw_ieUP6EbjwwkcE9QYP603uVswKGU2J4-27OkjLeiigC4EMAEwU-livakZ4jp70PrZLMkQsA2GlL3vElPwk1l1dXtCadFaedJXkEvsZYA/w178-h200/Picture10.png", "10": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjrs-Ja_SwS_EPTB_LP8huujA10tC-6lnvWanMEhvTsYVSzRjEGlIJqhsQ_zL_tL1VRYj-SwcpzAo5vGy4sARJOVgg4btz3o8RF5ph9tmDpbJkdwOoOXnFCEYWWgy_AkVz2ykh2gbmewMvTsDyeW4NJauClnkFrtSUGdU54Aq3HCYFMeiGd_BqdKwuPfEs/w200-h195/Picture11.png", "11": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjm598QWuugITTHr_JYGzlrdBYr4S3dxOi1m6VVNcRJO192Q2zAquPnfT9eF_drdlzCrStmZSZbDAVFRV2Xg8zPuH3HWvBKdLRRaYit55ouADiwRYfoJy0SOW4dXhZ0A6RaknxyNXkDLLpfANqcWlr_dlaiE-GDzCePw1xoOqK89FLbZwJ24Dhy8rCaXzw/w200-h195/Picture12.png", "12": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEix0cEkVheUC_wGp7uc_nGQzMUQXkv5oYpGBJnj1KM6zKAIeqt6EF4HSp2Wm7qXGEbeB4Fw4CGGuA3BNl05r3hMVCS1KPIQ6iQuq-NXmBWXNKq40D_QiL1q0RyddBe6tbWp3ffJWm_pF3iSP69siG8-ynCSMFKJBwH7VCoNk3qjITtaLbwAkX5IyA-3QUw/w200-h195/Picture13.png", "13": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhxhreO54NdUluH_02wthSG7LNoEfyn_4NralsxpcusbQOOTfJzT6Xq7lXwjqXpUwkRRLMUdbbP4iwdPUR5IULNSeZYSEjEaDZUgjMejheBr_dBvG7zCOzn4nAblat_tkTdeIKBFV0uCJTllNpZxQPYELAsy07CNYkgqCbYzNVrbXojR2SjO2fLD4oLKnc/w200-h195/Picture14.png", "14": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhgLNevL-Jvu2DOaNhKiBN6KlmwuEnrK-nNGhsrIiDQvO3_o1aOadkY-SJBvOH1G9KqpPiF_PEEDMaTYgThHreBtLU5V94u5QLtujAxyG0QwmZGpxqXVlkOJBwbxsAaKadU0NI8Ni24QAfeRkri_1tyhg0xZEVfKHU_ymdFU5Qk62ukdMcbuPGBR7tbPWM/w200-h196/Picture15.png", "15": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh_bcpzdvhMA-L5cmyPjXDDpxgShfvtSh5YlmXuMU0Oj8mFotcarC7dZzN6SYdridVKw77oFOR0UDNqmvOS_yTpy6tkIEBGoM-1HdF-nxvSDp2PgH22qFj3wHQ_gIjaAlRhX3h9yDIP55TEVmN7mliK9Jq8hnVmJeKSicATaYUE9ndksS0iv4GFgzpojgE/w200-h196/Picture16.png", "16": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiS7ykl6bSs5UrTss14dLTMe5zdtESv48tUxckGbRxiNk2wOTGXXVQToUDlwTiWtcLNckkC9GG-cbLgfJksTtFm0CEVJMBdPF881G6gQNqPZrncPpviG5j9ZWAK1bTKNUWkHHWWlqy5hpwV-X_WbwwL0NrCb8H4mrkPpyqhOeRdsMEfO6kQkigvNJrhlvQ/w200-h195/Picture17.png", "17": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhPgpFQGCsjzn2nXVcDwIvotDazlCQCvhmLCGdKGPANXB2-5d-C0Hx8LRYOTHZZIr3NVo4Sk6UZp4aMOzA2dln3fxu1uhEVkJx9exp9KdUNi2TOoiq5X-QZfLWJX3eoB7A_FuahnHmAGoVlaDxqItVvQMlsm6X6XYmaHSnAO5kmLCYe93Z2OoMeX3Lh0DY/w200-h195/Picture18.png", "18": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhwKDBK0-SpCYLbFs1wjEC1RjFFbL94PlekzVointLBf1r6ufnZen_R3JyAAeN3fMMS9Px4_okjVkcGEV8aGFuvykg2ziivnaX9gSRbjUFjzZ47GZOm2rydOS9jqJdTkmSQ8mU-E6Z0njFQsUNyn_XUPfyzQPK2HdlQq7M3ZWM29yj3oCa4FwBan4fC5uA/w200-h196/Picture19.png", "19": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhuPLRHGWWl-TzbJaz12uKK1TxQcgLf9Zl96_0ZeaZRI33ysfF6kQkHP9-Y3L2PHHT31KR_IwXvhLhkWlji8W0WK3aXyHbp2sJgyMahEydsWKrKvgCoK4Y5Z6TNQzTeRLWcc9yBmIcHqsMZET4ADvgLb4T7htEbUqYaHU9A0cj0eGn4_cvkZU4ccbEZpN0/w200-h196/Picture20.png", "20": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjmkejqv1Yw7DRLuWUeW4_2SP3dy2Bek9m0AdWsh-SAppHM6Jiio9PyV7LHBlx_6eTEUBBKhNd_iIWMq11lmOIfDxGInJQOlA_wSR2JgejU2w96WJSnb8qjymJVDOUIpGfPSEmkAkD-UZWw4ZiczuDtsIrJV9vVR7OB79ENh0U9rhsAPgq8jyuVUalnnzw/w200-h196/Picture21.png", "21": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh_weMt_TxnQnhj38gENuoHSal3njrzUULlJUgIEIxUrw01b_sllNrhPuVmGIvPvnQb4OIkqwnkuaeEJ2X3nvCxyEPN_rvRvkgqlII0lJrdUc6JwseFTLUVsSDxxNjCrFXKNPq9kXhfZwZwCenMOnsyIwyh4lFKJmbNORMe6tK0_qjA2j9Y2MeTi1h4Uf0/w200-h197/Picture22.png", "22": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh8WI8y2xx0KFWUAoL9Il4MEz2SSyRZlKgXG1ArO5fykyAHvMnH4-ak8xCgjV2Av3D7R0VBBu6LZQj3qTRdPuFpd_ObmDPHxnOZynD1D-xlWOBc27O8PXnYQiOipju71Gegpxrjp1W0A6N6fGYK2M39N3PlExVmIgNOPwC-7dEE5X0LvGG5qUpqV6jkHuY/w200-h196/Picture31.png", "23": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgUabmXOfXR4c38KXrgt-OGd4_6YTd1fKwqZ1i2m8ZQk776xlURDQy8qKog64ZbZO8_dhftgCdqk13pyUAC5XuEILMNoQkdcqjAhD-hmKqOr02HvhDUeaJHpZ6I7GXth0DamHemeItttUmwbRFVxojIIButq-QEfCIThaQq2USeWbw5AGRvT3XDmdtdBTc/w200-h197/Picture23.png", "24": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhg3lvsTb_gZHqv_hjCyG6K-OZgALTa3R8Yk8qUZEktUVQY2Rmndg9DKR93rO-exdAOsP-F_cFeuEtanq2E8nA3agwux4_MmSo74glItZfhnSK0ONSbJ6stOBbqhhPSY-pULB_LQN6fdTgo5kdDRkGT6h43hKm1Z8V2FURqS478i33003_4Ry9uiXQXV-U/w200-h195/Picture24.png", "25": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEir1GCC_nPmWzL6AAjYtXFHMX4DaX0HkxoVBnEPgzs3dMcsfw9BKv4BDldQNz1WtFod79XAmdhsRlHGMFVwgZm9YZOQOSryZDIzvMcM9omqgX8tzOE9SjW9delYe9hU2YXZpQT4g95sYkfaIg2ji2tNnO2A02E3yn76sndA_GPjf727EbB0ogBuF1QTsAY/w200-h196/Picture25.png", "26": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEi_sGE6iqZRGNsoi6RnG75st4J_uwy1AZ66i4fPRQkiz4z9glMJg_WUIet2k-SKQYjv8rfHMQmiyzwsUzFhpcZf9ELeCw1Y1m2c6PB4BIMX-cJzp34TBQ47THLe4HVkEqMh-M6qjd6JjA11foMv-ueI7mGKO2cp7FiMHO_YFmQPCoYFTDFfDcF9pc9Iq5Q/w200-h197/Picture26.png", "27": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiB9dn0hCkW7EpLaV6LUYBrEvScN-UnBkWD3feY50ZsiB_Hmf9FP2d-v_1EY63B1HGW77enF00XI4whph0cv8OvHWnQm6yy62vM2DG111drIf1tV39jsQaV7IsMW3-8qOKKerPku__piYLut15ARw28wu5MKy8S58Uf8utfVrV0Q9kNTOccvzIcRv8-UHw/w200-h196/Picture27.png", "28": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiaCask16dFc2yFSd20sD-5TH7cE6EA9wfygURqMfjdwxNCuHQaONamGSP51oRcQRs3ArTJmMbvXT1imQp3ItiY5kSzJQZFxQrTav-F54sf0OFK5E5rnYzk7_fgkiCj3tnJCNGVNprTrHFnviNn-CYiWoeO6xDu3ZidSd9PvTyzeCZTZpZ9OAjAvjDilhI/w200-h196/Picture28.png", "29": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgb7QA82OKcx-AiX-k8UjlYhtSYZXB-A2NRjyG2i9P04VczT4usSV-r5_8deORWuG5FfBnF-qIliWuKZuJ91X-29ryFaNS22S3DK9zCGGP2sIgh1dRMPgjePkex2eozjt2AINTCwMZ8Eks_8LuCrhd8QYM6__FNibfSi0-kjFz-xg5WixjFOzpQgW2rJ2A/w200-h197/Picture29.png", "30": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEi9zVQ5EiEEEbdBMwdCsfFCk48DxqT9UaXRLCy2LUmE3pXm-za-x419D1hAWFmedwwEZ5xhDN9E9WX3Vl6OhQuSTub_pqBQgx4PdD6tU1clKb621UkQOEfGhr8eQLS7uJwXODojAru1dBkJtDkmYcKl1BI8OguMgZzsw3Yt35cfP4RgEEeuRH_ioUqb8S8/w200-h197/Picture30.png" };
+
+const Engine = {
+    timeline: [], 
+    tempo: 0.169, 
+    currentIndex: 0, 
+    isPlaying: false, 
+    isLooping: false, 
+    isMetroOn: true,
+    transposeValue: 0, 
+    lookahead: 0.1,      
+    scheduleInterval: 25, 
+    nextNoteTime: 0.0,   
+    timerID: null,
+    audioCtx: null, 
+    masterGain: null, 
+    analyzer: null, 
+    audioDest: null, 
+    layerState: {}, 
+    isRecording: false, 
+    sampleBuffer: null,
+
+    // HIGHWAY PARAMS
+    scrollSpeed: 250, 
+    hitZoneY: 80, 
+    laneImages: {},
+
+    initAudio() {
+        if (!this.audioCtx) {
+            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            this.masterGain = this.audioCtx.createGain();
+            this.masterGain.gain.value = 0.8;
+            this.analyzer = this.audioCtx.createAnalyser();
+            this.analyzer.fftSize = 128;
+            this.masterGain.connect(this.analyzer);
+            this.analyzer.connect(this.audioCtx.destination);
+            this.audioDest = this.audioCtx.createMediaStreamDestination();
+            this.analyzer.connect(this.audioDest);
+            this.startVisualizer();
+            this.startHighway();
+        }
+        if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
+    },
+
+    async loadSample(file) {
+        this.initAudio();
+        const arrayBuffer = await file.arrayBuffer();
+        this.sampleBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+        document.getElementById('audio-status-label').textContent = "SUARA SIAP ✅";
+        document.getElementById('audio-status-label').style.color = "#2ecc71";
+    },
+
+    scheduleVoice(noteValue, time) {
+        if (!this.sampleBuffer || !this.audioCtx) return null;
+        const baseMidi = 60 + parseInt(noteValue);
+        const midiTarget = baseMidi + this.transposeValue;
+        const playbackRate = Math.pow(2, (midiTarget - 67) / 12);
+        const source = this.audioCtx.createBufferSource();
+        source.buffer = this.sampleBuffer;
+        source.playbackRate.setValueAtTime(playbackRate, time);
+        source.loop = true; 
+        source.loopStart = 0.15; 
+        source.loopEnd = 0.85;
+        const voiceGain = this.audioCtx.createGain();
+        voiceGain.gain.setValueAtTime(0, time);
+        voiceGain.gain.linearRampToValueAtTime(0.7, time + 0.02);
+        source.connect(voiceGain);
+        voiceGain.connect(this.masterGain);
+        source.start(time);
+        return { source, gain: voiceGain, noteId: noteValue, startTime: time };
+    },
+
+    stopVoiceAtTime(voice, time) {
+        if (!voice) return;
+        voice.gain.gain.cancelScheduledValues(time);
+        voice.gain.gain.linearRampToValueAtTime(0, time + 0.1);
+        setTimeout(() => { try { voice.source.stop(); } catch(e){} }, (time - this.audioCtx.currentTime) * 1000 + 150);
+    },
+
+    scheduler() {
+        if (!this.isPlaying) return;
+        const totalSteps = this.timeline.length * 16;
+        if (this.currentIndex >= totalSteps) {
+            if (this.isLooping) { this.currentIndex = 0; this.nextNoteTime = this.audioCtx.currentTime; }
+            else { this.stopAll(); return; }
+        }
+        while (this.nextNoteTime < this.audioCtx.currentTime + this.lookahead) {
+            this.scheduleNote(this.currentIndex, this.nextNoteTime);
+            this.advanceNote();
+        }
+        this.timerID = setTimeout(() => this.scheduler(), this.scheduleInterval);
+    },
+
+    scheduleNote(index, time) {
+        const totalSteps = this.timeline.length * 16;
+        if (index >= totalSteps) return;
+        const barIdx = Math.floor(index / 16);
+        const stepIdx = index % 16;
+        const currentGrid = this.timeline[barIdx].grid;
+
+        if (this.isMetroOn && stepIdx % 4 === 0) {
+            const osc = this.audioCtx.createOscillator();
+            const g = this.audioCtx.createGain();
+            osc.frequency.setValueAtTime(1200, time);
+            g.gain.setValueAtTime(0.05, time);
+            g.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+            osc.connect(g); g.connect(this.masterGain);
+            osc.start(time); osc.stop(time + 0.05);
+        }
+
+        currentGrid.forEach((row, rowIdx) => {
+            const val = row[stepIdx];
+            if (val !== undefined && val !== null && val !== "") {
+                if (this.layerState[rowIdx]) this.stopVoiceAtTime(this.layerState[rowIdx], time);
+                const v = this.scheduleVoice(val, time);
+                if (v) this.layerState[rowIdx] = v;
+            }
+        });
+
+        setTimeout(() => {
+            if (!this.isPlaying) return;
+            document.getElementById('bar-info').textContent = `BAR: ${barIdx + 1}/${this.timeline.length} | TICK: ${stepIdx}`;
+            document.getElementById('seek-slider').value = index;
+            if (stepIdx % 4 === 0) {
+                const dot = document.getElementById('metronome-dot');
+                dot.classList.add('dot-active');
+                setTimeout(() => dot.classList.remove('dot-active'), 100);
+            }
+        }, (time - this.audioCtx.currentTime) * 1000);
+    },
+
+    advanceNote() {
+        this.currentIndex++;
+        this.nextNoteTime += this.tempo; 
+    },
+
+    startVisualizer() {
+        const canvas = document.getElementById('visualizer-canvas');
+        const ctx = canvas.getContext('2d');
+        const draw = () => {
+            requestAnimationFrame(draw);
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+            if (!this.analyzer) return;
+            const dataArray = new Uint8Array(this.analyzer.frequencyBinCount);
+            this.analyzer.getByteFrequencyData(dataArray);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let x = 0;
+            const barWidth = (canvas.width / dataArray.length) * 2;
+            for(let i = 0; i < dataArray.length; i++) {
+                const barHeight = (dataArray[i] / 255) * canvas.height * 0.3;
+                ctx.fillStyle = `rgba(251, 191, 36, 0.15)`;
+                ctx.fillRect(x, canvas.height - barHeight, barWidth - 2, barHeight);
+                x += barWidth;
+            }
+        };
+        draw();
+    },
+
+    startHighway() {
+        const canvas = document.getElementById('highway-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        for(let i=0; i<=30; i++) {
+            const img = new Image();
+            img.src = IMAGE_MAP[i] || IMAGE_MAP["0"];
+            this.laneImages[i] = img;
+        }
+
+        const render = () => {
+            requestAnimationFrame(render);
+            canvas.width = window.innerWidth;
+            canvas.height = canvas.offsetHeight;
+            
+            const laneWidth = canvas.width / 31;
+            const now = this.audioCtx ? this.audioCtx.currentTime : 0;
+            const shakingLanes = new Set();
+
+            // 1. Background
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            for(let i=0; i<=30; i++) {
+                ctx.strokeStyle = '#151515';
+                ctx.beginPath();
+                ctx.moveTo(i * laneWidth, 0); ctx.lineTo(i * laneWidth, canvas.height);
+                ctx.stroke();
+            }
+
+            // 2. Falling Sustain Notes (Bottom to Top)
+            if (this.isPlaying && this.timeline.length > 0) {
+                const totalSteps = this.timeline.length * 16;
+                
+                for(let i = 0; i < totalSteps; i++) {
+                    const stepTime = this.nextNoteTime + (i - this.currentIndex) * this.tempo;
+                    const barIdx = Math.floor(i / 16);
+                    const stepIdx = i % 16;
+                    const grid = this.timeline[barIdx].grid;
+
+                    grid.forEach(row => {
+                        const val = row[stepIdx];
+                        if (val !== undefined && val !== null && val !== "") {
+                            // Hitung Durasi (Sustain)
+                            let durationTicks = 1;
+                            let nextI = i + 1;
+                            while(nextI < totalSteps) {
+                                const nextBar = Math.floor(nextI / 16);
+                                const nextStep = nextI % 16;
+                                const nextVal = this.timeline[nextBar].grid[grid.indexOf(row)][nextStep];
+                                if (nextVal === undefined || nextVal === null || nextVal === "") {
+                                    durationTicks++;
+                                    nextI++;
+                                } else { break; }
+                            }
+
+                            const noteDuration = durationTicks * this.tempo;
+                            const actualNote = parseInt(val) + this.transposeValue;
+                            
+                            // Y adalah titik ATAS (Note On)
+                            const yTop = this.hitZoneY + (stepTime - now) * this.scrollSpeed;
+                            const sustainHeight = noteDuration * this.scrollSpeed;
+                            const yBottom = yTop + sustainHeight;
+
+                            // Render jika berada di dalam layar
+                            if (yBottom > 0 && yTop < canvas.height) {
+                                if (actualNote >=0 && actualNote <= 30) {
+                                    // Deteksi collision dengan hitzone untuk efek getar
+                                    if (yTop <= this.hitZoneY && yBottom >= this.hitZoneY) {
+                                        shakingLanes.add(actualNote);
+                                    }
+
+                                    // Warna Berdasarkan Range
+                                    let color;
+                                    if (actualNote < 10) color = ['#ff4757', '#b33939'];
+                                    else if (actualNote < 20) color = ['#fbbf24', '#cc8e00'];
+                                    else color = ['#3b82f6', '#1e3799'];
+
+                                    const grad = ctx.createLinearGradient(0, yTop, 0, yBottom);
+                                    grad.addColorStop(0, color[0]);
+                                    grad.addColorStop(1, color[1]);
+
+                                    ctx.fillStyle = grad;
+                                    ctx.shadowBlur = (yTop <= this.hitZoneY && yBottom >= this.hitZoneY) ? 15 : 0;
+                                    ctx.shadowColor = color[0];
+                                    
+                                    // Menggambar Balok Bulat (Rounded Rect)
+                                    const x = actualNote * laneWidth + 4;
+                                    const w = laneWidth - 8;
+                                    ctx.beginPath();
+                                    ctx.roundRect(x, yTop, w, sustainHeight, 5);
+                                    ctx.fill();
+                                    ctx.shadowBlur = 0;
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+
+            // 3. Hit Zone Line
+            ctx.strokeStyle = 'rgba(251, 191, 36, 0.8)';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(0, this.hitZoneY); ctx.lineTo(canvas.width, this.hitZoneY);
+            ctx.stroke();
+
+            // 4. Lane Images (Angklung)
+            for(let i=0; i<=30; i++) {
+                ctx.save();
+                let dx = i * laneWidth + laneWidth/2 - 20;
+                let dy = this.hitZoneY - 55;
+                
+                if (shakingLanes.has(i)) {
+                    dx += (Math.random() - 0.5) * 6;
+                    dy += (Math.random() - 0.5) * 6;
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = '#fbbf24';
+                } else {
+                    ctx.globalAlpha = 0.3;
+                }
+
+                if (this.laneImages[i].complete) {
+                    ctx.drawImage(this.laneImages[i], dx, dy, 40, 50);
+                }
+                ctx.restore();
+            }
+        };
+        render();
+    },
+
+    play() {
+        if (!this.sampleBuffer) return alert("Muat MP3 dulu!");
+        if (this.timeline.length === 0) return alert("Muat JSON dulu!");
+        this.initAudio();
+        if (this.isPlaying) return;
+        this.isPlaying = true;
+        document.getElementById('playBtn').classList.add('active-btn');
+        this.nextNoteTime = this.audioCtx.currentTime + 0.1;
+        this.scheduler();
+    },
+
+    stopAll() {
+        clearTimeout(this.timerID);
+        this.isPlaying = false;
+        this.currentIndex = 0;
+        document.getElementById('playBtn').classList.remove('active-btn');
+        document.getElementById('bar-info').textContent = `BAR: 0/${this.timeline.length} | TICK: 0`;
+        document.getElementById('seek-slider').value = 0;
+        Object.keys(this.layerState).forEach(k => {
+            const v = this.layerState[k];
+            if(v) {
+                try {
+                    v.gain.gain.cancelScheduledValues(this.audioCtx.currentTime);
+                    v.gain.gain.setTargetAtTime(0, this.audioCtx.currentTime, 0.05);
+                    v.source.stop(this.audioCtx.currentTime + 0.1);
+                } catch(e){}
+            }
+            delete this.layerState[k];
+        });
+    },
+
+    async toggleRecord() {
+        if (this.isRecording) { this.mediaRecorder.stop(); return; }
+        try {
+            this.initAudio();
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: {frameRate: 60}, audio: true });
+            const combined = new MediaStream([stream.getVideoTracks()[0], this.audioDest.stream.getAudioTracks()[0]]);
+            this.mediaRecorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 8000000 });
+            this.recordedChunks = [];
+            this.mediaRecorder.ondataavailable = e => this.recordedChunks.push(e.data);
+            this.mediaRecorder.onstop = () => {
+                const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                a.download = `REC_TABKLUNG_${Date.now()}.webm`; a.click();
+                this.isRecording = false;
+                document.getElementById('main-body').classList.remove('recording-active');
+                document.getElementById('recBtn').classList.remove('rec-running');
+                stream.getTracks().forEach(t => t.stop());
+            };
+            this.mediaRecorder.start();
+            this.isRecording = true;
+            document.getElementById('main-body').classList.add('recording-active');
+            document.getElementById('recBtn').classList.add('rec-running');
+        } catch (e) {}
+    }
+};
+
+window.onload = () => {
+    const canvas = document.getElementById('highway-canvas');
+    canvas.width = window.innerWidth;
+    canvas.height = canvas.offsetHeight;
+};
+
+window.addEventListener('keydown', (e) => { 
+    if (e.key === "Escape" && Engine.isRecording) Engine.toggleRecord(); 
+    if (e.code === "Space") {
+        e.preventDefault();
+        Engine.isPlaying ? Engine.stopAll() : Engine.play();
+    }
+});
+
+document.getElementById('loadAudioBtn').onclick = () => document.getElementById('audioLoader').click();
+document.getElementById('audioLoader').onchange = (e) => Engine.loadSample(e.target.files[0]);
+document.getElementById('fileInput').onchange = (e) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        const data = JSON.parse(ev.target.result);
+        let allBars = [];
+        data.sections.forEach(s => allBars = allBars.concat(s.bars));
+        Engine.timeline = allBars;
+        Engine.tempo = parseFloat(data.tempo) || 0.169;
+        document.getElementById('seek-slider').max = (allBars.length * 16) - 1;
+        document.getElementById('song-title-text').textContent = data.songTitle || "READY";
+        document.getElementById('bar-info').textContent = `BAR: 0/${allBars.length} | TICK: 0`;
+    };
+    reader.readAsText(e.target.files[0]);
+};
+
+document.getElementById('transUp').onclick = () => {
+    Engine.transposeValue++;
+    document.getElementById('transVal').textContent = (Engine.transposeValue > 0 ? "+" : "") + Engine.transposeValue;
+};
+document.getElementById('transDown').onclick = () => {
+    Engine.transposeValue--;
+    document.getElementById('transVal').textContent = (Engine.transposeValue > 0 ? "+" : "") + Engine.transposeValue;
+};
+
+document.getElementById('playBtn').onclick = () => Engine.play();
+document.getElementById('stopBtn').onclick = () => Engine.stopAll();
+document.getElementById('recBtn').onclick = () => Engine.toggleRecord();
+document.getElementById('loopBtn').onclick = function() { Engine.isLooping = this.classList.toggle('active-btn'); };
+document.getElementById('metroBtn').onclick = function() { Engine.isMetroOn = this.classList.toggle('active-btn'); };
+document.getElementById('seek-slider').oninput = function() { 
+    Engine.currentIndex = parseInt(this.value);
+    if(Engine.isPlaying) Engine.nextNoteTime = Engine.audioCtx.currentTime;
+};
+</script>
+</body>
+</html>
