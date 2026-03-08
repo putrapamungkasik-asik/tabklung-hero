@@ -73,7 +73,7 @@
         .rec-running { background: var(--red) !important; animation: pulse-rec 1s infinite; }
         
         #bar-info { font-family: monospace; color: var(--glow); font-size: 14px; margin-left: auto; }
-        #watermark { position: fixed; bottom: 20px; right: 20px; color: rgba(255,255,255,0.2); font-weight: bold; display: none; z-index: 100; }
+        #watermark { position: fixed; bottom: 20px; right: 20px; color: rgba(255,255,255,0.4); font-weight: bold; display: none; z-index: 100; font-family: monospace; }
         .recording-active #watermark { display: block; }
         .recording-active .toolbar, .recording-active .seek-container { display: none !important; }
 
@@ -83,7 +83,7 @@
 <body id="main-body">
 
 <canvas id="visualizer-canvas"></canvas>
-<div id="watermark">TABKLUNG SUSTAIN V12.5</div>
+<div id="watermark">ABK31 | by: Kang Putra Angklung</div>
 
 <div id="chord-display">
     <span id="song-title-text">SIAP IMPORT JSON</span>
@@ -175,7 +175,8 @@ const Engine = {
 
     scheduleVoice(noteValue, time) {
         if (!this.sampleBuffer || !this.audioCtx) return null;
-        const baseMidi = 60 + parseInt(noteValue);
+        // Perbaikan: baseMidi langsung menggunakan nilai MIDI dari JSON
+        const baseMidi = parseInt(noteValue);
         const midiTarget = baseMidi + this.transposeValue;
         const playbackRate = Math.pow(2, (midiTarget - 67) / 12);
         const source = this.audioCtx.createBufferSource();
@@ -335,7 +336,9 @@ const Engine = {
                             }
 
                             const noteDuration = durationTicks * this.tempo;
-                            const actualNote = parseInt(val) + this.transposeValue;
+                            
+                            // Perbaikan: Pemetaan actualNote MIDI 55 menjadi Lane 0
+                            const actualNote = (parseInt(val) - 55) + this.transposeValue;
                             
                             // Y adalah titik ATAS (Note On)
                             const yTop = this.hitZoneY + (stepTime - now) * this.scrollSpeed;
